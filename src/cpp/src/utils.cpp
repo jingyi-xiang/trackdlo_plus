@@ -246,7 +246,7 @@ std::tuple<MatrixXd, MatrixXd, double> shortest_dist_between_lines (MatrixXd a0,
     MatrixXd A_normalized = A / A.norm();
     MatrixXd B_normalized = B / B.norm();
 
-    MatrixXd cross = cross_product(A, B);
+    MatrixXd cross = cross_product(A_normalized, B_normalized);
     double denom = cross.squaredNorm();
 
     // If lines are parallel (denom=0) test if lines overlap.
@@ -402,6 +402,8 @@ MatrixXd post_processing (MatrixXd Y_0, MatrixXd Y, double dlo_diameter, int nod
             // the below definition should be consistent with CDCPD2's Eq 18-21
             double r_i = ((pA - Y.row(i+1)).array() / (Y.row(i) - Y.row(i+1)).array())(0, 0);
             double r_j = ((pB - Y.row(j+1)).array() / (Y.row(j) - Y.row(j+1)).array())(0, 0);
+
+            std::cout << "r_i, r_j = " << r_i << ", " << r_j << std::endl;
 
             // === Python ===
             // pA_var = r_i*vars[i] + (1 - r_i)*vars[i+1]

@@ -9,7 +9,7 @@
     <arg name="visualize_initialization_process" default="false" />
     <arg name="multi_color_dlo" default="false" />
 
-    <arg name="nodes_per_dlo" default="30" />
+    <arg name="nodes_per_dlo" default="25" />
     <arg name="use_first_frame_masks" default="false" />
     <arg name="folder_name" default=" " />
 
