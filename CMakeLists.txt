@@ -42,25 +42,26 @@ catkin_package(
 #  DEPENDS system_lib
 )
 
-# add_executable(
-#   tracker src/cpp/src/tracking_node.cpp src/cpp/src/tracker.cpp src/cpp/src/utils.cpp
-# )
-# target_link_libraries(tracker
-#   ${catkin_LIBRARIES}
-#   ${PCL_LIBRARIES}
-#   ${OpenCV_LIBS}
-#   Eigen3::Eigen
-# )
-# # target_compile_options(trackdlo PRIVATE -O3 -Wall -Wextra -Wconversion -Wshadow -g)
-
 add_executable(
-  eigen_test src/cpp/src/test.cpp
+  tracker src/cpp/src/tracking_node.cpp src/cpp/src/tracker.cpp src/cpp/src/utils.cpp
 )
-target_link_libraries(eigen_test
+target_link_libraries(tracker
   ${catkin_LIBRARIES}
   ${PCL_LIBRARIES}
   ${OpenCV_LIBS}
   ${GUROBI_LIBRARIES}
   Eigen3::Eigen
 )
-# target_compile_options(cv_test PRIVATE -O3 -Wall -Wextra -Wconversion -Wshadow -g)
+# target_compile_options(trackdlo PRIVATE -O3 -Wall -Wextra -Wconversion -Wshadow -g)
+
+# add_executable(
+#   eigen_test src/cpp/src/test.cpp
+# )
+# target_link_libraries(eigen_test
+#   ${catkin_LIBRARIES}
+#   ${PCL_LIBRARIES}
+#   ${OpenCV_LIBS}
+#   ${GUROBI_LIBRARIES}
+#   Eigen3::Eigen
+# )
+# # target_compile_options(cv_test PRIVATE -O3 -Wall -Wextra -Wconversion -Wshadow -g)

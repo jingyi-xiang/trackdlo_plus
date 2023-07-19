@@ -289,12 +289,12 @@ std::tuple<MatrixXd, MatrixXd, double> shortest_dist_between_lines (MatrixXd a0,
     MatrixXd tempA = MatrixXd::Zero(3, 3);
     tempA.block(0, 0, 1, 3) = t;
     tempA.block(1, 0, 1, 3) = B_normalized;
-    tempA.block(2, 0, 1, 3) = cross.transpose();
+    tempA.block(2, 0, 1, 3) = cross;
 
     MatrixXd tempB = MatrixXd::Zero(3, 3);
     tempB.block(0, 0, 1, 3) = t;
     tempB.block(1, 0, 1, 3) = A_normalized;
-    tempB.block(2, 0, 1, 3) = cross.transpose();
+    tempB.block(2, 0, 1, 3) = cross;
 
     double t0 = tempA.determinant() / denom;
     double t1 = tempB.determinant() / denom;
@@ -351,7 +351,7 @@ static GRBEnv& getGRBEnv () {
     return env;
 }
 
-MatrixXd post_processing (MatrixXd Y_0, MatrixXd Y, double dlo_diameter, int nodes_per_dlo) {
+MatrixXd post_processing (MatrixXd Y_0, MatrixXd Y, double dlo_diameter, int nodes_per_dlo, bool clamp) {
     MatrixXd Y_processed = MatrixXd::Zero(Y.rows(), Y.cols());
     int num_of_dlos = Y.rows() / nodes_per_dlo;
 
@@ -367,10 +367,6 @@ MatrixXd post_processing (MatrixXd Y_0, MatrixXd Y, double dlo_diameter, int nod
     const std::vector<double> lower_bound(num_of_vars, -GRB_INFINITY);
     const std::vector<double> upper_bound(num_of_vars, GRB_INFINITY);
     vars = model.addVars(lower_bound.data(), upper_bound.data(), nullptr, nullptr, nullptr, (int) num_of_vars);
-    std::vector<GRBLinExpr> g_verts = {};
-    for (int i = 0; i < num_of_vars; i ++) {
-        
-    }
 
     // add constraints to the model
     for (int i = 0; i < Y.rows()-1; i ++) {
@@ -393,6 +389,12 @@ MatrixXd post_processing (MatrixXd Y_0, MatrixXd Y, double dlo_diameter, int nod
                 continue;
             }
 
+            if (!clamp) {
+                auto[pA_new, pB_new, dist] = shortest_dist_between_lines(Y_0.row(i), Y_0.row(i+1), Y_0.row(j), Y_0.row(j+1), false);
+                pA = pA_new.replicate(1, 1);
+                pB = pB_new.replicate(1, 1);
+            }
+
             std::cout << "Adding self-intersection constraint between E(" << i << ", " << i+1 << ") and E(" << j << ", " << j+1 << ")" << std::endl;
 
             // pA is the point on edge y_i, y_{i+1}
@@ -408,9 +410,42 @@ MatrixXd post_processing (MatrixXd Y_0, MatrixXd Y, double dlo_diameter, int nod
             // model.addConstr(operator.ge(((pA_var[0] - pB_var[0])*(pA[0] - pB[0]) +
             //                              (pA_var[1] - pB_var[1])*(pA[1] - pB[1]) +
             //                              (pA_var[2] - pB_var[2])*(pA[2] - pB[2])) / np.linalg.norm(pA - pB), dlo_diameter))
-            
+
+            // vars can be seen as a flattened array of size len(Y)*3
+            model.addConstr((((r_i*vars[3*i] + (1 - r_i)*vars[3*(i+1)]) - (r_j*vars[3*j] + (1 - r_j)*vars[3*(j+1)])) * (pA(0, 0) - pB(0, 0)) +
+                             ((r_i*vars[3*i+1] + (1 - r_i)*vars[3*(i+1)+1]) - (r_j*vars[3*j+1] + (1 - r_j)*vars[3*(j+1)+1])) * (pA(0, 1) - pB(0, 1)) +
+                             ((r_i*vars[3*i+2] + (1 - r_i)*vars[3*(i+1)+2]) - (r_j*vars[3*j+2] + (1 - r_j)*vars[3*(j+1)+2])) * (pA(0, 2) - pB(0, 2))) / (pA - pB).norm()
+                            >= dlo_diameter);
         }
     }
+
+    // objective function (as close to Y as possible)
+    GRBQuadExpr objective_fn(0);
+    for (ssize_t i = 0; i < Y.rows(); i ++) {
+        const auto expr0 = vars[3*i] - Y(i, 0);
+        const auto expr1 = vars[3*i+1] - Y(i, 1);
+        const auto expr2 = vars[3*i+2] - Y(i, 2);
+        objective_fn += expr0 * expr0;
+        objective_fn += expr1 * expr1;
+        objective_fn += expr2 * expr2;
+    }
+    model.setObjective(objective_fn, GRB_MINIMIZE);
+
+    model.update();
+    model.optimize();
+    if (model.get(GRB_IntAttr_Status) == GRB_OPTIMAL || model.get(GRB_IntAttr_Status) == GRB_SUBOPTIMAL) {
+        for (ssize_t i = 0; i < Y.rows(); i ++) {
+            Y_processed(i, 0) = vars[3*i].get(GRB_DoubleAttr_X);
+            Y_processed(i, 1) = vars[3*i+1].get(GRB_DoubleAttr_X);
+            Y_processed(i, 2) = vars[3*i+2].get(GRB_DoubleAttr_X);
+        }
+    }
+    else {
+        std::cout << "Status: " << model.get(GRB_IntAttr_Status) << std::endl;
+        exit(-1);
+    }
+
+    return Y_processed;
 }
 
 // node color and object color are in rgba format and range from 0-1
