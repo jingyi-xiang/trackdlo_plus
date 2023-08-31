@@ -351,7 +351,7 @@ static GRBEnv& getGRBEnv () {
     return env;
 }
 
-MatrixXd post_processing (MatrixXd Y_0, MatrixXd Y, double dlo_diameter, int nodes_per_dlo, bool clamp) {
+MatrixXd post_processing (MatrixXd Y_0, MatrixXd Y, double check_distance, double dlo_diameter, int nodes_per_dlo, bool clamp) {
     MatrixXd Y_processed = MatrixXd::Zero(Y.rows(), Y.cols());
     int num_of_dlos = Y.rows() / nodes_per_dlo;
 
@@ -384,16 +384,12 @@ MatrixXd post_processing (MatrixXd Y_0, MatrixXd Y, double dlo_diameter, int nod
                 }
             }
 
-            auto[pA, pB, dist] = shortest_dist_between_lines(Y_0.row(i), Y_0.row(i+1), Y_0.row(j), Y_0.row(j+1), true);
-            if (dist >= dlo_diameter) {
+            auto[temp1, temp2, cur_shortest_dist] = shortest_dist_between_lines(Y.row(i), Y.row(i+1), Y.row(j), Y.row(j+1), true);
+            if (cur_shortest_dist >= check_distance) {
                 continue;
             }
 
-            if (!clamp) {
-                auto[pA_new, pB_new, dist] = shortest_dist_between_lines(Y_0.row(i), Y_0.row(i+1), Y_0.row(j), Y_0.row(j+1), false);
-                pA = pA_new.replicate(1, 1);
-                pB = pB_new.replicate(1, 1);
-            }
+            auto[pA, pB, dist] = shortest_dist_between_lines(Y_0.row(i), Y_0.row(i+1), Y_0.row(j), Y_0.row(j+1), clamp);
 
             std::cout << "Adding self-intersection constraint between E(" << i << ", " << i+1 << ") and E(" << j << ", " << j+1 << ")" << std::endl;
 

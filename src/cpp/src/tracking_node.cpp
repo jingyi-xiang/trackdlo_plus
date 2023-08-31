@@ -37,6 +37,7 @@ bool use_prev_sigma2;
 double downsample_leaf_size;
 int nodes_per_dlo;
 double dlo_diameter;
+double check_distance;
 bool clamp;
 
 std::string camera_info_topic;
@@ -220,9 +221,12 @@ sensor_msgs::ImagePtr Callback(const sensor_msgs::ImageConstPtr& image_msg, cons
                     point.z = pc_z;
 
                     // currently something so color doesn't show up in rviz
-                    point.r = cur_image_orig.at<cv::Vec3b>(i, j)[0];
-                    point.g = cur_image_orig.at<cv::Vec3b>(i, j)[1];
-                    point.b = cur_image_orig.at<cv::Vec3b>(i, j)[2];
+                    // point.r = cur_image_orig.at<cv::Vec3b>(i, j)[0];
+                    // point.g = cur_image_orig.at<cv::Vec3b>(i, j)[1];
+                    // point.b = cur_image_orig.at<cv::Vec3b>(i, j)[2];
+                    point.r = 255;
+                    point.g = 255;
+                    point.b = 255;
 
                     cur_pc.push_back(point);
                 }
@@ -251,7 +255,7 @@ sensor_msgs::ImagePtr Callback(const sensor_msgs::ImageConstPtr& image_msg, cons
         multi_dlo_tracker.cpd_lle(X, Y, sigma2, beta, lambda, lle_weight, mu, max_iter, tol, include_lle, use_geodesic, use_prev_sigma2, nodes_per_dlo);
 
         // post processing
-        MatrixXd Y_processed = post_processing(Y_0, Y, dlo_diameter, nodes_per_dlo, clamp);
+        MatrixXd Y_processed = post_processing(Y_0, Y, check_distance, dlo_diameter, nodes_per_dlo, clamp);
         Y = Y_processed.replicate(1, 1);
 
         // log time
@@ -391,6 +395,7 @@ int main(int argc, char **argv) {
     nh.getParam("/multidlo/multi_color_dlo", multi_color_dlo);
     nh.getParam("/multidlo/nodes_per_dlo", nodes_per_dlo);
     nh.getParam("/multidlo/dlo_diameter", dlo_diameter);
+    nh.getParam("/multidlo/check_distance", check_distance);
     nh.getParam("/multidlo/clamp", clamp);
     nh.getParam("/multidlo/downsample_leaf_size", downsample_leaf_size);
 
