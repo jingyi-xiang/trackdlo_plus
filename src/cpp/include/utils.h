@@ -6,6 +6,7 @@
 #define UTILS_H
 
 using Eigen::MatrixXd;
+using Eigen::Matrix2Xi;
 using cv::Mat;
 
 void signal_callback_handler(int signum);
@@ -27,6 +28,7 @@ MatrixXd sort_pts (MatrixXd Y_0);
 
 std::vector<MatrixXd> line_sphere_intersection (MatrixXd point_A, MatrixXd point_B, MatrixXd sphere_center, double radius);
 MatrixXd post_processing (MatrixXd Y_0, MatrixXd Y, double check_distance, double dlo_diameter, int nodes_per_dlo, bool clamp);
+MatrixXd cdcpd2_post_processing (MatrixXd Y_0, MatrixXd Y, Matrix2Xi E, MatrixXd initial_template = MatrixXd::Zero(0, 0));
 
 visualization_msgs::MarkerArray MatrixXd2MarkerArray (MatrixXd Y,
                                                       std::string marker_frame, 

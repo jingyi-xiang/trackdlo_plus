@@ -3,6 +3,8 @@
 
 using Eigen::MatrixXd;
 using Eigen::RowVectorXd;
+using Eigen::Matrix2Xi;
+using Eigen::Vector3d;
 using cv::Mat;
 
 void signal_callback_handler(int signum) {
@@ -349,6 +351,215 @@ std::tuple<MatrixXd, MatrixXd, double> shortest_dist_between_lines (MatrixXd a0,
 static GRBEnv& getGRBEnv () {
     static GRBEnv env;
     return env;
+}
+
+std::tuple<MatrixXd, MatrixXd> nearest_points_line_segments (MatrixXd last_template, Matrix2Xi E) {
+    // find the nearest points on the line segments
+    // refer to the website https://math.stackexchange.com/questions/846054/closest-points-on-two-line-segments
+    MatrixXd startPts(4, E.cols()*E.cols()); // Matrix: 3 * E^2: startPts.col(E*cols()*i + j) is the nearest point on edge i w.r.t. j
+    MatrixXd endPts(4, E.cols()*E.cols()); // Matrix: 3 * E^2: endPts.col(E*cols()*i + j) is the nearest point on edge j w.r.t. i
+    for (int i = 0; i < E.cols(); ++i)
+    {
+        Vector3d P1 = last_template.col(E(0, i));
+        Vector3d P2 = last_template.col(E(1, i));
+        // cout << "P1:" << endl;
+        // cout << P1 << endl << endl;
+        // cout << "P2:" << endl;
+        // cout << P2 << endl << endl;
+        for (int j = 0; j < E.cols(); ++j)
+        {
+            Vector3d P3 = last_template.col(E(0, j));
+            Vector3d P4 = last_template.col(E(1, j));
+            
+            // cout << "P3:" << endl;
+            // cout << P3 << endl << endl;
+            // cout << "P4:" << endl;
+            // cout << P4 << endl << endl;
+
+            float R21 = (P2-P1).squaredNorm();
+            float R22 = (P4-P3).squaredNorm();
+            float D4321 = (P4-P3).dot(P2-P1);
+            float D3121 = (P3-P1).dot(P2-P1);
+            float D4331 = (P4-P3).dot(P3-P1);
+
+            // cout << "original s:" << (-D4321*D4331+D3121*R22)/(R21*R22-D4321*D4321) << endl;
+            // cout << "original t:" << (D4321*D3121-D4331*R21)/(R21*R22-D4321*D4321) << endl;
+
+            float s;
+            float t;
+            
+            if (R21*R22-D4321*D4321 != 0)
+            {
+                s = std::min(std::max((-D4321*D4331+D3121*R22)/(R21*R22-D4321*D4321), 0.0f), 1.0f);
+                t = std::min(std::max((D4321*D3121-D4331*R21)/(R21*R22-D4321*D4321), 0.0f), 1.0f);
+            } else {
+                // means P1 P2 P3 P4 are on the same line
+                float P13 = (P3 - P1).squaredNorm();
+                s = 0; t = 0;
+                float P14 = (P4 - P1).squaredNorm();
+                if (P14 < P13) {
+                    s = 0; t = 1;
+                }
+                float P23 = (P3 - P2).squaredNorm();
+                if (P23 < P14 && P23 < P13)
+                {
+                    s = 1; t = 0;
+                }
+                float P24 = (P4 - P2).squaredNorm();
+                if (P24 < P23 && P24 < P14 && P24 < P13) {
+                    s = 1; t = 1;
+                }
+            }
+            // cout << "s: " << s << endl;
+            // cout << "t: " << t << endl;
+
+            for (int dim = 0; dim < 3; ++dim)
+            {
+                startPts(dim, E.cols()*i+j) = (1-s)*P1(dim)+s*P2(dim);
+                endPts(dim, E.cols()*i+j) = (1-t)*P3(dim)+t*P4(dim);
+            }
+            startPts(3, E.cols()*i+j) = s;
+            endPts(3, E.cols()*i+j) = t;
+        }
+    }
+    return {startPts, endPts};
+}
+
+static GRBQuadExpr buildDifferencingQuadraticTerm(GRBVar* point_a, GRBVar* point_b, const size_t num_vars_per_point) {
+    GRBQuadExpr expr;
+
+    // Build the main diagonal
+    const std::vector<double> main_diag(num_vars_per_point, 1.0);
+    expr.addTerms(main_diag.data(), point_a, point_a, (int)num_vars_per_point);
+    expr.addTerms(main_diag.data(), point_b, point_b, (int)num_vars_per_point);
+
+    // Build the off diagonal - use -2 instead of -1 because the off diagonal terms are the same
+    const std::vector<double> off_diagonal(num_vars_per_point, -2.0);
+    expr.addTerms(off_diagonal.data(), point_a, point_b, (int)num_vars_per_point);
+
+    return expr;
+}
+
+// Matrix3Xf Optimizer::operator()(const Matrix3Xf& Y, const Matrix2Xi& E, const std::vector<CDCPD::FixedPoint>& fixed_points, const bool self_intersection, const bool interaction_constrain)
+MatrixXd cdcpd2_post_processing (MatrixXd Y_0, MatrixXd Y, Matrix2Xi E, MatrixXd initial_template) {
+    // Y: Y^t in Eq. (21)
+    // E: E in Eq. (21)
+    // auto [nearestPts, normalVecs] = nearest_points_and_normal(last_template);
+    // auto Y_force = force_pts(nearestPts, normalVecs, Y);
+    MatrixXd Y_opt(Y.rows(), Y.cols());
+    GRBVar* vars = nullptr;
+    try
+    {
+        const ssize_t num_vectors = Y.cols();
+        const ssize_t num_vars = 3 * num_vectors;
+
+        GRBEnv& env = getGRBEnv();
+
+        // Disables logging to file and logging to console (with a 0 as the value of the flag)
+        env.set(GRB_IntParam_OutputFlag, 0);
+        GRBModel model(env);
+        model.set("ScaleFlag", "0");
+		// model.set("DualReductions", 0);
+        model.set("FeasibilityTol", "0.01");
+		// model.set("OutputFlag", "1");
+
+        // Add the vars to the model
+        // Note that variable bound is important, without a bound, Gurobi defaults to 0, which is clearly unwanted
+        const std::vector<double> lb(num_vars, -GRB_INFINITY);
+        const std::vector<double> ub(num_vars, GRB_INFINITY);
+        vars = model.addVars(lb.data(), ub.data(), nullptr, nullptr, nullptr, (int) num_vars);
+        model.update();
+
+        // Add the edge constraints
+        if (initial_template.rows() != 0) {
+            for (ssize_t i = 0; i < E.cols(); ++i) {
+                model.addQConstr(
+                            buildDifferencingQuadraticTerm(&vars[E(0, i) * 3], &vars[E(1, i) * 3], 3),
+                            GRB_LESS_EQUAL,
+                            1.05 * 1.05 * (initial_template.col(E(0, i)) - initial_template.col(E(1, i))).squaredNorm(),
+                            "upper_edge_" + std::to_string(E(0, i)) + "_to_" + std::to_string(E(1, i)));
+            }
+            model.update();
+        }
+
+        auto [startPts, endPts] = nearest_points_line_segments(Y_0, E);
+        for (int row = 0; row < E.cols(); ++row)
+        {
+            Vector3d P1 = Y_0.col(E(0, row));
+            Vector3d P2 = Y_0.col(E(1, row));
+            for (int col = 0; col < E.cols(); ++col)
+            {
+                float s = startPts(3, row*E.cols() + col);
+                float t = endPts(3, row*E.cols() + col);
+                Vector3d P3 = Y_0.col(E(0, col));
+                Vector3d P4 = Y_0.col(E(1, col));
+                float l = (endPts.col(row*E.cols() + col).topRows(3) - startPts.col(row*E.cols() + col).topRows(3)).norm();
+                if (!P1.isApprox(P3) && !P1.isApprox(P4) && !P2.isApprox(P3) && !P2.isApprox(P4) && l <= 0.02) {
+                    // model.addConstr((vars[E(0, col)*3 + 0] - startPts(0, row*E.cols() + col))*(endPts(0, row*E.cols() + col) - startPts(0, row*E.cols() + col)) +
+                    //                 (vars[E(0, col)*3 + 1] - startPts(1, row*E.cols() + col))*(endPts(1, row*E.cols() + col) - startPts(1, row*E.cols() + col)) +
+                    //                 (vars[E(0, col)*3 + 2] - startPts(2, row*E.cols() + col))*(endPts(2, row*E.cols() + col) - startPts(2, row*E.cols() + col)) >= 0);
+                    // model.addConstr((vars[E(1, col)*3 + 0] - startPts(0, row*E.cols() + col))*(endPts(0, row*E.cols() + col) - startPts(0, row*E.cols() + col)) +
+                    //                 (vars[E(1, col)*3 + 1] - startPts(1, row*E.cols() + col))*(endPts(1, row*E.cols() + col) - startPts(1, row*E.cols() + col)) +
+                    //                 (vars[E(1, col)*3 + 2] - startPts(2, row*E.cols() + col))*(endPts(2, row*E.cols() + col) - startPts(2, row*E.cols() + col)) >= 0);
+                    model.addConstr(((vars[E(0, col)*3 + 0]*(1-t) + vars[E(1, col)*3 + 0]*t) - (vars[E(0, row)*3 + 0]*(1-s) + vars[E(1, row)*3 + 0]*s))
+                                        *(endPts(0, row*E.cols() + col) - startPts(0, row*E.cols() + col)) +
+                                    ((vars[E(0, col)*3 + 1]*(1-t) + vars[E(1, col)*3 + 1]*t) - (vars[E(0, row)*3 + 1]*(1-s) + vars[E(1, row)*3 + 1]*s))
+                                        *(endPts(1, row*E.cols() + col) - startPts(1, row*E.cols() + col)) +
+                                    ((vars[E(0, col)*3 + 2]*(1-t) + vars[E(1, col)*3 + 2]*t) - (vars[E(0, row)*3 + 2]*(1-s) + vars[E(1, row)*3 + 2]*s))
+                                        *(endPts(2, row*E.cols() + col) - startPts(2, row*E.cols() + col)) >= 0.01 * l);
+                }
+            }
+        }
+
+        // Build the objective function
+        GRBQuadExpr objective_fn(0);
+        for (ssize_t i = 0; i < num_vectors; ++i)
+        {
+            const auto expr0 = vars[i * 3 + 0] - Y(0, i);
+            const auto expr1 = vars[i * 3 + 1] - Y(1, i);
+            const auto expr2 = vars[i * 3 + 2] - Y(2, i);
+            objective_fn += expr0 * expr0;
+            objective_fn += expr1 * expr1;
+            objective_fn += expr2 * expr2;
+        }
+        model.setObjective(objective_fn, GRB_MINIMIZE);
+        model.update();
+
+        // Find the optimal solution, and extract it
+        model.optimize();
+        if (model.get(GRB_IntAttr_Status) == GRB_OPTIMAL || model.get(GRB_IntAttr_Status) == GRB_SUBOPTIMAL)  // || model.get(GRB_IntAttr_Status) == GRB_SUBOPTIMAL || model.get(GRB_IntAttr_Status) == GRB_NUMERIC || modelGRB_INF_OR_UNBD)
+        {
+            // std::cout << "Y" << std::endl;
+            // std::cout << Y << std::endl;
+            for (ssize_t i = 0; i < num_vectors; i++)
+            {
+                Y_opt(0, i) = vars[i * 3 + 0].get(GRB_DoubleAttr_X);
+                Y_opt(1, i) = vars[i * 3 + 1].get(GRB_DoubleAttr_X);
+                Y_opt(2, i) = vars[i * 3 + 2].get(GRB_DoubleAttr_X);
+            }
+        }
+        else
+        {
+            std::cout << "Status: " << model.get(GRB_IntAttr_Status) << std::endl;
+            exit(-1);
+        }
+    }
+    catch(GRBException& e)
+    {
+        std::cout << "Error code = " << e.getErrorCode() << std::endl;
+        std::cout << e.getMessage() << std::endl;
+    }
+    catch(...)
+    {
+        std::cout << "Exception during optimization" << std::endl;
+    }
+
+    delete[] vars;
+	// auto [nearestPts, normalVecs] = nearest_points_and_normal(last_template);
+    // return force_pts(nearestPts, normalVecs, Y_opt);
+    
+    MatrixXd ret =  Y_opt.transpose();
+	return ret;
 }
 
 MatrixXd post_processing (MatrixXd Y_0, MatrixXd Y, double check_distance, double dlo_diameter, int nodes_per_dlo, bool clamp) {

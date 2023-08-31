@@ -11,6 +11,8 @@ ros::Subscriber camera_info_sub;
 
 using Eigen::MatrixXd;
 using Eigen::RowVectorXd;
+using Eigen::MatrixXi;
+using Eigen::Matrix2Xi;
 
 MatrixXd Y;
 double sigma2;
@@ -255,7 +257,34 @@ sensor_msgs::ImagePtr Callback(const sensor_msgs::ImageConstPtr& image_msg, cons
         multi_dlo_tracker.cpd_lle(X, Y, sigma2, beta, lambda, lle_weight, mu, max_iter, tol, include_lle, use_geodesic, use_prev_sigma2, nodes_per_dlo);
 
         // post processing
-        MatrixXd Y_processed = post_processing(Y_0, Y, check_distance, dlo_diameter, nodes_per_dlo, clamp);
+        // MatrixXd Y_processed = post_processing(Y_0, Y, check_distance, dlo_diameter, nodes_per_dlo, clamp);
+        // edges(0, 0) = 0;
+        // edges(1, edges.cols() - 1) = Y.rows() - 1;
+        // for (int i = 1; i <= edges.cols() - 1; ++i) {
+        //     edges(0, i) = i;
+        //     edges(1, i - 1) = i;
+        // }
+        MatrixXi edges(2, Y.rows());
+        edges(0, 0) = 0;
+        edges(1, edges.cols() - 1) = Y.rows() - 1;
+        for (int i = 1; i <= edges.cols() - 1; ++i) {
+            edges(0, i) = i;
+            edges(1, i - 1) = i;
+        }
+
+        MatrixXi new_edges(2, (nodes_per_dlo - 1) * num_of_dlos);
+        int count = 0;
+        for (int i = 0; i < num_of_dlos; i ++) {
+            for (int j = 0; j < nodes_per_dlo - 1; j ++) {
+                new_edges.col(count) = edges.col(i*nodes_per_dlo + j);
+                count ++;
+            }
+        }
+
+        std::cout << new_edges << std::endl;
+
+        MatrixXd Y_processed = cdcpd2_post_processing(Y_0.transpose(), Y.transpose(), new_edges, init_nodes.transpose());
+        // MatrixXd Y_processed = cdcpd2_post_processing(Y_0.transpose(), Y.transpose(), new_edges);
         Y = Y_processed.replicate(1, 1);
 
         // log time
