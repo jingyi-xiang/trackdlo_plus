@@ -507,6 +507,7 @@ MatrixXd cdcpd2_post_processing (MatrixXd Y_0, MatrixXd Y, Matrix2Xi E, MatrixXd
                                         *(endPts(1, row*E.cols() + col) - startPts(1, row*E.cols() + col)) +
                                     ((vars[E(0, col)*3 + 2]*(1-t) + vars[E(1, col)*3 + 2]*t) - (vars[E(0, row)*3 + 2]*(1-s) + vars[E(1, row)*3 + 2]*s))
                                         *(endPts(2, row*E.cols() + col) - startPts(2, row*E.cols() + col)) >= 0.01 * l);
+                    std::cout << "0.01 * l = " << 0.01 * l << std::endl;
                 }
             }
         }
@@ -655,6 +656,201 @@ MatrixXd post_processing (MatrixXd Y_0, MatrixXd Y, double check_distance, doubl
     }
 
     return Y_processed;
+}
+
+std::vector<GRBLinExpr> build_GW (MatrixXd G, GRBVar* w_vars) {
+    std::vector<GRBLinExpr> result = {};
+
+    // let w_vars be [w0_x, w0_y, w0_z, w1_x, w1_y, w1_z, ...]
+    for (int row = 0; row < G.rows(); row ++) {
+        for (int col = 0; col < 3; col ++) {
+            GRBLinExpr temp(0);
+            for (int cursor = 0; cursor < G.rows(); cursor ++) {
+                temp += G(row, cursor) * w_vars[cursor*3 + col];
+            }
+            result.push_back(temp);
+        }
+    }
+
+    return result;
+}
+
+GRBQuadExpr build_tr_WTGW (MatrixXd G, GRBVar* w_vars) {
+    std::vector<std::vector<GRBVar>> W = {};
+    for (int row = 0; row < G.rows(); row ++) {
+        std::vector<GRBVar> cur_row = {};
+        for (int col = 0; col < 3; col ++) {
+            cur_row.push_back(w_vars[row*3 + col]);
+        }
+        W.push_back(cur_row);
+    }
+
+    GRBQuadExpr tr_WTGW(0);
+
+    std::vector<std::vector<GRBLinExpr>> WTG = {};
+    for (int row = 0; row < 3; row ++) {
+        std::vector<GRBLinExpr> cur_row = {};
+        for (int col = 0; col < G.cols(); col ++) {
+            GRBLinExpr temp(0);
+            for (int cursor = 0; cursor < G.rows(); cursor ++) {
+                temp += W[cursor][row] * G(cursor, col);
+            }
+            cur_row.push_back(temp);
+        }
+        WTG.push_back(cur_row);
+    }
+
+    // WTG is 3xM
+    // WTGW is 3x3
+    int M = G.rows();
+    for (int i = 0; i < 3; i ++) {
+        for (int cursor = 0; cursor < M; cursor ++) {
+            tr_WTGW += WTG[i][cursor] * W[cursor][i];
+        }
+    }
+
+    return tr_WTGW;
+} 
+
+MatrixXd post_processing_dev_2 (MatrixXd Y_0, MatrixXd Y, Matrix2Xi E, MatrixXd initial_template, MatrixXd G) {
+    // Y: Y^t in Eq. (21)
+    // E: E in Eq. (21)
+    // auto [nearestPts, normalVecs] = nearest_points_and_normal(last_template);
+    // auto Y_force = force_pts(nearestPts, normalVecs, Y);
+    MatrixXd Y_opt(Y.rows(), Y.cols());
+    MatrixXd W_opt(Y.rows(), Y.cols());
+
+    GRBVar* vars = nullptr;
+    try
+    {
+        const ssize_t num_vectors = Y.cols();
+        const ssize_t num_vars = 3 * num_vectors;
+
+        GRBEnv& env = getGRBEnv();
+
+        // Disables logging to file and logging to console (with a 0 as the value of the flag)
+        env.set(GRB_IntParam_OutputFlag, 0);
+        GRBModel model(env);
+        model.set("ScaleFlag", "0");
+		// model.set("DualReductions", 0);
+        model.set("FeasibilityTol", "0.01");
+		// model.set("OutputFlag", "1");
+
+        // Add the vars to the model
+        // Note that variable bound is important, without a bound, Gurobi defaults to 0, which is clearly unwanted
+        const std::vector<double> lb(num_vars, -GRB_INFINITY);
+        const std::vector<double> ub(num_vars, GRB_INFINITY);
+        vars = model.addVars(lb.data(), ub.data(), nullptr, nullptr, nullptr, (int) num_vars);
+        model.update();
+
+        std::vector<GRBLinExpr> GW_vars = build_GW(G, vars);
+
+        std::cout << "built GW" << std::endl;
+
+        if (initial_template.rows() != 0) {
+            for (int i = 0; i < G.rows()-1; i ++) {
+                if ((i+1) % 20 == 0) {
+                    continue;
+                }
+                model.addQConstr((Y_0(0, i) + GW_vars[i*3 + 0] - Y_0(0, i+1) - GW_vars[(i+1)*3 + 0])*(Y_0(0, i) + GW_vars[i*3 + 0] - Y_0(0, i+1) - GW_vars[(i+1)*3 + 0]) + 
+                                 (Y_0(1, i) + GW_vars[i*3 + 1] - Y_0(1, i+1) - GW_vars[(i+1)*3 + 1])*(Y_0(1, i) + GW_vars[i*3 + 1] - Y_0(1, i+1) - GW_vars[(i+1)*3 + 1]) +
+                                 (Y_0(2, i) + GW_vars[i*3 + 2] - Y_0(2, i+1) - GW_vars[(i+1)*3 + 2])*(Y_0(2, i) + GW_vars[i*3 + 2] - Y_0(2, i+1) - GW_vars[(i+1)*3 + 2]), 
+                                 GRB_LESS_EQUAL,
+                                 1.05 * 1.05 * (initial_template.col(i) - initial_template.col(i+1)).squaredNorm());
+            }
+            model.update();
+        }
+
+        std::cout << "added stretching constraint" << std::endl;
+
+        auto [startPts, endPts] = nearest_points_line_segments(Y_0, E);
+        for (int row = 0; row < E.cols(); ++row)
+        {
+            Vector3d P1 = Y_0.col(E(0, row));
+            Vector3d P2 = Y_0.col(E(1, row));
+            for (int col = 0; col < E.cols(); ++col)
+            {
+                float s = startPts(3, row*E.cols() + col);
+                float t = endPts(3, row*E.cols() + col);
+                Vector3d P3 = Y_0.col(E(0, col));
+                Vector3d P4 = Y_0.col(E(1, col));
+                float l = (endPts.col(row*E.cols() + col).topRows(3) - startPts.col(row*E.cols() + col).topRows(3)).norm();
+                if (!P1.isApprox(P3) && !P1.isApprox(P4) && !P2.isApprox(P3) && !P2.isApprox(P4) && l <= 0.02) {
+                    // model.addConstr(((vars[E(0, col)*3 + 0]*(1-t) + vars[E(1, col)*3 + 0]*t) - (vars[E(0, row)*3 + 0]*(1-s) + vars[E(1, row)*3 + 0]*s))
+                    //                     *(endPts(0, row*E.cols() + col) - startPts(0, row*E.cols() + col)) +
+                    //                 ((vars[E(0, col)*3 + 1]*(1-t) + vars[E(1, col)*3 + 1]*t) - (vars[E(0, row)*3 + 1]*(1-s) + vars[E(1, row)*3 + 1]*s))
+                    //                     *(endPts(1, row*E.cols() + col) - startPts(1, row*E.cols() + col)) +
+                    //                 ((vars[E(0, col)*3 + 2]*(1-t) + vars[E(1, col)*3 + 2]*t) - (vars[E(0, row)*3 + 2]*(1-s) + vars[E(1, row)*3 + 2]*s))
+                    //                     *(endPts(2, row*E.cols() + col) - startPts(2, row*E.cols() + col)) >= 0.01 * l);
+                    model.addConstr((((Y_0(0, E(0, col)) + GW_vars[E(0, col)*3 + 0]) * (1-t) + (Y_0(0, E(1, col)) + GW_vars[E(1, col)*3 + 0]) * t) - ((Y_0(0, E(0, row)) + GW_vars[E(0, row)*3 + 0])*(1-s) + (Y_0(0, E(1, row)) + GW_vars[E(1, row)*3 + 0])*s))
+                                        *(endPts(0, row*E.cols() + col) - startPts(0, row*E.cols() + col)) +
+                                    (((Y_0(1, E(0, col)) + GW_vars[E(0, col)*3 + 1]) * (1-t) + (Y_0(1, E(1, col)) + GW_vars[E(1, col)*3 + 1]) * t) - ((Y_0(1, E(0, row)) + GW_vars[E(0, row)*3 + 1])*(1-s) + (Y_0(1, E(1, row)) + GW_vars[E(1, row)*3 + 1])*s))
+                                        *(endPts(1, row*E.cols() + col) - startPts(1, row*E.cols() + col)) +
+                                    (((Y_0(2, E(0, col)) + GW_vars[E(0, col)*3 + 2]) * (1-t) + (Y_0(2, E(1, col)) + GW_vars[E(1, col)*3 + 2]) * t) - ((Y_0(2, E(0, row)) + GW_vars[E(0, row)*3 + 2])*(1-s) + (Y_0(2, E(1, row)) + GW_vars[E(1, row)*3 + 2])*s))
+                                        *(endPts(2, row*E.cols() + col) - startPts(2, row*E.cols() + col)) >= 0.01 * l);
+                }
+            }
+        }
+
+        std::cout << "added self-intersection constraint" << std::endl;
+
+        GRBQuadExpr tr_WTGW = build_tr_WTGW(G, vars);
+        std::cout << "built tr(W^T*G*W)" << std::endl;
+
+        // Build the objective function
+        GRBQuadExpr objective_fn(0);
+        objective_fn += tr_WTGW;
+        for (ssize_t i = 0; i < num_vectors; ++i)
+        {
+            const auto expr0 = GW_vars[i * 3 + 0] - (Y(0, i) - Y_0(0, i));
+            const auto expr1 = GW_vars[i * 3 + 1] - (Y(1, i) - Y_0(1, i));
+            const auto expr2 = GW_vars[i * 3 + 2] - (Y(2, i) - Y_0(2, i));
+            objective_fn += expr0 * expr0;
+            objective_fn += expr1 * expr1;
+            objective_fn += expr2 * expr2;
+        }
+        model.setObjective(objective_fn, GRB_MINIMIZE);
+        model.update();
+
+        std::cout << "built objective function" << std::endl;
+
+        // Find the optimal solution, and extract it
+        model.optimize();
+        if (model.get(GRB_IntAttr_Status) == GRB_OPTIMAL || model.get(GRB_IntAttr_Status) == GRB_SUBOPTIMAL)  // || model.get(GRB_IntAttr_Status) == GRB_SUBOPTIMAL || model.get(GRB_IntAttr_Status) == GRB_NUMERIC || modelGRB_INF_OR_UNBD)
+        {
+            // std::cout << "Y" << std::endl;
+            // std::cout << Y << std::endl;
+            for (ssize_t i = 0; i < num_vectors; i++)
+            {
+                W_opt(0, i) = vars[i * 3 + 0].get(GRB_DoubleAttr_X);
+                W_opt(1, i) = vars[i * 3 + 1].get(GRB_DoubleAttr_X);
+                W_opt(2, i) = vars[i * 3 + 2].get(GRB_DoubleAttr_X);
+            }
+        }
+        else
+        {
+            std::cout << "Status: " << model.get(GRB_IntAttr_Status) << std::endl;
+            exit(-1);
+        }
+    }
+    catch(GRBException& e)
+    {
+        std::cout << "Error code = " << e.getErrorCode() << std::endl;
+        std::cout << e.getMessage() << std::endl;
+    }
+    catch(...)
+    {
+        std::cout << "Exception during optimization" << std::endl;
+    }
+
+    delete[] vars;
+	// auto [nearestPts, normalVecs] = nearest_points_and_normal(last_template);
+    // return force_pts(nearestPts, normalVecs, Y_opt);
+
+    std::cout << "extracted output" << std::endl;
+
+    MatrixXd ret = Y_0.transpose() + G * W_opt.transpose();
+	return ret;
 }
 
 // node color and object color are in rgba format and range from 0-1

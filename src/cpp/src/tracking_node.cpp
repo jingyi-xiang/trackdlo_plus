@@ -254,7 +254,7 @@ sensor_msgs::ImagePtr Callback(const sensor_msgs::ImageConstPtr& image_msg, cons
         // perform tracking
         int num_of_dlos = Y.rows() / nodes_per_dlo;
         MatrixXd Y_0 = Y.replicate(1, 1);
-        multi_dlo_tracker.cpd_lle(X, Y, sigma2, beta, lambda, lle_weight, mu, max_iter, tol, include_lle, use_geodesic, use_prev_sigma2, nodes_per_dlo);
+        multi_dlo_tracker.cpd_lle(X, Y, sigma2, beta, lambda, lle_weight, mu, max_iter, tol, include_lle, use_geodesic, use_prev_sigma2, nodes_per_dlo, {}, 0, 1);
 
         // post processing
         // MatrixXd Y_processed = post_processing(Y_0, Y, check_distance, dlo_diameter, nodes_per_dlo, clamp);
@@ -281,10 +281,64 @@ sensor_msgs::ImagePtr Callback(const sensor_msgs::ImageConstPtr& image_msg, cons
             }
         }
 
-        std::cout << new_edges << std::endl;
+        // std::cout << new_edges << std::endl;
 
-        MatrixXd Y_processed = cdcpd2_post_processing(Y_0.transpose(), Y.transpose(), new_edges, init_nodes.transpose());
+        // MatrixXd Y_processed = cdcpd2_post_processing(Y_0.transpose(), Y.transpose(), new_edges, init_nodes.transpose());
         // MatrixXd Y_processed = cdcpd2_post_processing(Y_0.transpose(), Y.transpose(), new_edges);
+
+        // ===== get G =====
+        // tracking multiple dlos
+        int M = Y_0.rows();
+        int kernel = 1;
+        double beta_post_proc = 0.1;
+
+        MatrixXd converted_node_dis = MatrixXd::Zero(M, M); // this is a M*M matrix in place of diff_sqrt
+        MatrixXd converted_node_dis_sq = MatrixXd::Zero(M, M);
+        std::vector<double> converted_node_coord = {0.0};   // this is not squared
+
+        MatrixXd G = MatrixXd::Zero(M, M);
+
+        double cur_sum = 0;
+        for (int i = 0; i < M-1; i ++) {
+            cur_sum += pt2pt_dis(Y_0.row(i+1), Y_0.row(i));
+            converted_node_coord.push_back(cur_sum);
+        }
+
+        for (int i = 0; i < converted_node_coord.size(); i ++) {
+            for (int j = 0; j < converted_node_coord.size(); j ++) {
+                converted_node_dis_sq(i, j) = pow(converted_node_coord[i] - converted_node_coord[j], 2);
+                converted_node_dis(i, j) = abs(converted_node_coord[i] - converted_node_coord[j]);
+            }
+        }
+
+        if (kernel == 3) {
+            G = (-converted_node_dis_sq / (2 * beta_post_proc * beta_post_proc)).array().exp();
+        }
+        else if (kernel == 0) {
+            G = (-converted_node_dis / (2 * beta_post_proc * beta_post_proc)).array().exp();
+        }
+        else if (kernel == 1) {
+            G = 1/(2*beta_post_proc * 2*beta_post_proc) * (-sqrt(2)*converted_node_dis/beta_post_proc).array().exp() * (sqrt(2)*converted_node_dis.array() + beta_post_proc);
+        }
+        else if (kernel == 2) {
+            G = 27 * 1/(72 * pow(beta_post_proc, 3)) * (-sqrt(3)*converted_node_dis/beta_post_proc).array().exp() * (sqrt(3)*beta_post_proc*beta_post_proc + 3*beta_post_proc*converted_node_dis.array() + sqrt(3)*converted_node_dis_sq.array());
+        }
+        else { // default to gaussian
+            G = (-converted_node_dis_sq / (2 * beta_post_proc * beta_post_proc)).array().exp();
+        }
+
+        if (use_geodesic && num_of_dlos > 1) {
+            MatrixXd G_new = MatrixXd::Zero(M, M);
+            for (int i = 0; i < num_of_dlos; i ++) {
+                int start = i * nodes_per_dlo;
+                G_new.block(start, start, nodes_per_dlo, nodes_per_dlo) = G.block(start, start, nodes_per_dlo, nodes_per_dlo);
+            }
+            G = G_new.replicate(1, 1);
+        }
+
+        MatrixXd Y_processed = post_processing_dev_2(Y_0.transpose(), Y.transpose(), new_edges, init_nodes.transpose(), G);
+        
+
         Y = Y_processed.replicate(1, 1);
 
         // log time

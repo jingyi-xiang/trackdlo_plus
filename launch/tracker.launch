@@ -29,7 +29,7 @@
         <param name="check_distance" value="0.01" />
         <param name="clamp" type="bool" value="true" />
 
-        <param name="beta" value="1.5"/>
+        <param name="beta" value="5"/>
         <param name="lambda" value="1"/>
 
         <param name="lle_weight" value="10.0" />
