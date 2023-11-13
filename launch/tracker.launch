@@ -10,7 +10,7 @@
     <arg name="visualize_initialization_process" default="false" />
     <arg name="multi_color_dlo" default="false" />
 
-    <arg name="nodes_per_dlo" default="20" />
+    <arg name="nodes_per_dlo" default="25" />
     <arg name="use_first_frame_masks" default="false" />
     <arg name="folder_name" default=" " />
 
@@ -25,11 +25,11 @@
         <param name="hsv_threshold_lower_limit" type="string" value="$(arg hsv_threshold_lower_limit)" />
 
         <param name="nodes_per_dlo" type="int" value="$(arg nodes_per_dlo)" />
-        <param name="dlo_diameter" value="0.008" />
+        <param name="dlo_diameter" value="0.007" />
         <param name="check_distance" value="0.01" />
         <param name="clamp" type="bool" value="true" />
 
-        <param name="beta" value="5"/>
+        <param name="beta" value="2"/>
         <param name="lambda" value="1"/>
 
         <param name="lle_weight" value="10.0" />

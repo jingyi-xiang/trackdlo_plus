@@ -666,7 +666,9 @@ std::vector<GRBLinExpr> build_GW (MatrixXd G, GRBVar* w_vars) {
         for (int col = 0; col < 3; col ++) {
             GRBLinExpr temp(0);
             for (int cursor = 0; cursor < G.rows(); cursor ++) {
-                temp += G(row, cursor) * w_vars[cursor*3 + col];
+                if (G(row, cursor) > 1e-4) {
+                    temp += G(row, cursor) * w_vars[cursor*3 + col];
+                }
             }
             result.push_back(temp);
         }
@@ -693,7 +695,9 @@ GRBQuadExpr build_tr_WTGW (MatrixXd G, GRBVar* w_vars) {
         for (int col = 0; col < G.cols(); col ++) {
             GRBLinExpr temp(0);
             for (int cursor = 0; cursor < G.rows(); cursor ++) {
-                temp += W[cursor][row] * G(cursor, col);
+                if (G(cursor, col) > 1e-4) {
+                    temp += W[cursor][row] * G(cursor, col);
+                }
             }
             cur_row.push_back(temp);
         }
@@ -743,10 +747,14 @@ MatrixXd post_processing_dev_2 (MatrixXd Y_0, MatrixXd Y, Matrix2Xi E, MatrixXd 
         vars = model.addVars(lb.data(), ub.data(), nullptr, nullptr, nullptr, (int) num_vars);
         model.update();
 
+        auto stamp = std::chrono::high_resolution_clock::now();
         std::vector<GRBLinExpr> GW_vars = build_GW(G, vars);
+        auto time_diff = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - stamp).count() / 1000.0;
+        ROS_INFO_STREAM("Build GW: " + std::to_string(time_diff) + " ms");
 
-        std::cout << "built GW" << std::endl;
+        // std::cout << "built GW" << std::endl;
 
+        stamp = std::chrono::high_resolution_clock::now();
         if (initial_template.rows() != 0) {
             for (int i = 0; i < G.rows()-1; i ++) {
                 if ((i+1) % 20 == 0) {
@@ -760,9 +768,12 @@ MatrixXd post_processing_dev_2 (MatrixXd Y_0, MatrixXd Y, Matrix2Xi E, MatrixXd 
             }
             model.update();
         }
+        time_diff = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - stamp).count() / 1000.0;
+        ROS_INFO_STREAM("Add stretching constraint: " + std::to_string(time_diff) + " ms");
 
-        std::cout << "added stretching constraint" << std::endl;
+        // std::cout << "added stretching constraint" << std::endl;
 
+        stamp = std::chrono::high_resolution_clock::now();
         auto [startPts, endPts] = nearest_points_line_segments(Y_0, E);
         for (int row = 0; row < E.cols(); ++row)
         {
@@ -791,31 +802,46 @@ MatrixXd post_processing_dev_2 (MatrixXd Y_0, MatrixXd Y, Matrix2Xi E, MatrixXd 
                 }
             }
         }
+        time_diff = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - stamp).count() / 1000.0;
+        ROS_INFO_STREAM("Add self-intersection constraint: " + std::to_string(time_diff) + " ms");
 
-        std::cout << "added self-intersection constraint" << std::endl;
+        // std::cout << "added self-intersection constraint" << std::endl;
 
+        stamp = std::chrono::high_resolution_clock::now();
         GRBQuadExpr tr_WTGW = build_tr_WTGW(G, vars);
-        std::cout << "built tr(W^T*G*W)" << std::endl;
+        time_diff = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - stamp).count() / 1000.0;
+        ROS_INFO_STREAM("Build tr(W^T*G*W): " + std::to_string(time_diff) + " ms");
+        // std::cout << "built tr(W^T*G*W)" << std::endl;
 
         // Build the objective function
+        stamp = std::chrono::high_resolution_clock::now();
         GRBQuadExpr objective_fn(0);
         objective_fn += tr_WTGW;
         for (ssize_t i = 0; i < num_vectors; ++i)
         {
-            const auto expr0 = GW_vars[i * 3 + 0] - (Y(0, i) - Y_0(0, i));
-            const auto expr1 = GW_vars[i * 3 + 1] - (Y(1, i) - Y_0(1, i));
-            const auto expr2 = GW_vars[i * 3 + 2] - (Y(2, i) - Y_0(2, i));
-            objective_fn += expr0 * expr0;
-            objective_fn += expr1 * expr1;
-            objective_fn += expr2 * expr2;
+            // const auto expr0 = GW_vars[i * 3 + 0] - (Y(0, i) - Y_0(0, i));
+            // const auto expr1 = GW_vars[i * 3 + 1] - (Y(1, i) - Y_0(1, i));
+            // const auto expr2 = GW_vars[i * 3 + 2] - (Y(2, i) - Y_0(2, i));
+            // objective_fn += expr0 * expr0;
+            // objective_fn += expr1 * expr1;
+            // objective_fn += expr2 * expr2;
+            objective_fn += GW_vars[i * 3 + 0]*GW_vars[i * 3 + 0] - 2*GW_vars[i * 3 + 0]*(Y(0, i) - Y_0(0, i)) + (Y(0, i) - Y_0(0, i))*(Y(0, i) - Y_0(0, i));
+            objective_fn += GW_vars[i * 3 + 1]*GW_vars[i * 3 + 1] - 2*GW_vars[i * 3 + 1]*(Y(1, i) - Y_0(1, i)) + (Y(1, i) - Y_0(1, i))*(Y(1, i) - Y_0(1, i));
+            objective_fn += GW_vars[i * 3 + 2]*GW_vars[i * 3 + 2] - 2*GW_vars[i * 3 + 2]*(Y(2, i) - Y_0(2, i)) + (Y(2, i) - Y_0(2, i))*(Y(2, i) - Y_0(2, i));
         }
         model.setObjective(objective_fn, GRB_MINIMIZE);
         model.update();
+        time_diff = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - stamp).count() / 1000.0;
+        ROS_INFO_STREAM("Build objective: " + std::to_string(time_diff) + " ms");
 
-        std::cout << "built objective function" << std::endl;
+        // std::cout << "built objective function" << std::endl;
 
         // Find the optimal solution, and extract it
+        stamp = std::chrono::high_resolution_clock::now();
         model.optimize();
+        time_diff = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - stamp).count() / 1000.0;
+        ROS_INFO_STREAM("Optimize model: " + std::to_string(time_diff) + " ms");
+
         if (model.get(GRB_IntAttr_Status) == GRB_OPTIMAL || model.get(GRB_IntAttr_Status) == GRB_SUBOPTIMAL)  // || model.get(GRB_IntAttr_Status) == GRB_SUBOPTIMAL || model.get(GRB_IntAttr_Status) == GRB_NUMERIC || modelGRB_INF_OR_UNBD)
         {
             // std::cout << "Y" << std::endl;
