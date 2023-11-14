@@ -335,6 +335,10 @@ sensor_msgs::ImagePtr Callback(const sensor_msgs::ImageConstPtr& image_msg, cons
 
         // draw edges closest to the camera first
         for (int idx : indices_vec) {
+            if ((idx + 1) % nodes_per_dlo == 0) {
+                continue;
+            }
+
             int col_1 = static_cast<int>(image_coords_mask(idx, 0)/image_coords_mask(idx, 2));
             int row_1 = static_cast<int>(image_coords_mask(idx, 1)/image_coords_mask(idx, 2));
 
@@ -376,6 +380,9 @@ sensor_msgs::ImagePtr Callback(const sensor_msgs::ImageConstPtr& image_msg, cons
         // sort visible nodes to preserve the original connectivity
         std::sort(visible_nodes.begin(), visible_nodes.end());
 
+        std::cout << "===== visible nodes =====" << std::endl;
+        print_1d_vector(visible_nodes);
+
         // minor mid-section occlusion is usually fine
         // extend visible nodes so that gaps as small as 2 to 3 nodes are filled
         std::vector<int> visible_nodes_extended = {};
@@ -383,6 +390,10 @@ sensor_msgs::ImagePtr Callback(const sensor_msgs::ImageConstPtr& image_msg, cons
             visible_nodes_extended.push_back(visible_nodes[i]);
             // extend visible nodes
             if (fabs(converted_node_coord[visible_nodes[i+1]] - converted_node_coord[visible_nodes[i]]) <= d_vis) {
+                // should not extend to nodees on different dlos
+                if (int(i / nodes_per_dlo) != int ((i+1) / nodes_per_dlo)) {
+                    continue;
+                }
                 for (int j = 1; j < visible_nodes[i+1] - visible_nodes[i]; j ++) {
                     visible_nodes_extended.push_back(visible_nodes[i] + j);
                 }

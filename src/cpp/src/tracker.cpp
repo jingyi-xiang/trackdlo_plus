@@ -943,18 +943,23 @@ void tracker::tracking_step (MatrixXd X_orig,
         guide_nodes_ = Y_.replicate(1, 1);
     }
 
+    // // TEMP TEST
+    // guide_nodes_ = Y_.replicate(1, 1);
+
     // determine DLO state: heading visible, tail visible, both visible, or both occluded
     // priors_vec should be the final output; priors_vec[i] = {index, x, y, z}
     double sigma2_pre_proc = sigma2_;
     // pre-processing registration
     cpd_lle(X_orig, guide_nodes_, sigma2_pre_proc, beta_pre_proc_, lambda_pre_proc_, lle_weight_, mu_, max_iter_, tol_, true);
 
+    // // TEMP TEST
+    // Y_ = guide_nodes_.replicate(1, 1);
+
     int num_of_dlos = Y_.rows() / nodes_per_dlo_;
 
     std::cout << "== visible_nodes_extended ==" << std::endl;
     print_1d_vector(visible_nodes_extended);
 
-    int visible_nodes_extended_index = 0;
     for (int dlo_idx = 0; dlo_idx < num_of_dlos; dlo_idx ++) {
         std::cout << "===== dlo #" + std::to_string(dlo_idx+1) + " =====" << std::endl;
 
@@ -962,23 +967,26 @@ void tracker::tracking_step (MatrixXd X_orig,
         MatrixXd Y_sub = Y_.block(dlo_idx*nodes_per_dlo_, 0, nodes_per_dlo_, 3);
 
         // get guide nodes sub
-        MatrixXd guide_nodes_sub = guide_nodes_.block(dlo_idx*nodes_per_dlo_, 0, nodes_per_dlo_, 3);
+        std::vector<MatrixXd> guide_nodes_sub_vec = {};
+        for (int i = 0; i < visible_nodes_extended.size(); i ++) {
+            if (visible_nodes_extended[i] >= dlo_idx*nodes_per_dlo_ && visible_nodes_extended[i] < (dlo_idx+1)*nodes_per_dlo_) {
+                guide_nodes_sub_vec.push_back(guide_nodes_.row(i));
+            }
+        }
+        MatrixXd guide_nodes_sub = MatrixXd::Zero(guide_nodes_sub_vec.size(), 3);
+        for (int i = 0; i < guide_nodes_sub_vec.size(); i ++) {
+            guide_nodes_sub.row(i) = guide_nodes_sub_vec[i];
+        }
+
+        std::cout << "===== guide_nodes_sub =====" << std::endl;
+        std::cout << guide_nodes_sub << std::endl;
 
         // get visible nodes sub
         std::vector<int> visible_nodes_extended_sub = {};
-        int id = visible_nodes_extended[visible_nodes_extended_index];
-        while (id < (dlo_idx+1)*nodes_per_dlo_) {
-            if (visible_nodes_extended_index == Y_.rows()) {
-                break;
+        for (auto id : visible_nodes_extended) {
+            if (id >= dlo_idx*nodes_per_dlo_ && id < (dlo_idx+1)*nodes_per_dlo_) {
+                visible_nodes_extended_sub.push_back(id - dlo_idx*nodes_per_dlo_);
             }
-
-            // indices in visible nodes need to be within the range of [0, nodes_per_dlo_]; otherwise traversal won't work
-            visible_nodes_extended_sub.push_back(id - dlo_idx*nodes_per_dlo_);
-            visible_nodes_extended_index += 1;
-
-            // std::cout << "visible_nodes_extended_index = " << visible_nodes_extended_index << std::endl;
-            id = visible_nodes_extended[visible_nodes_extended_index];
-            // std::cout << "id = " << id << std::endl;
         }
         std::cout << "===== visible_nodes_extended_sub =====" << std::endl;
         print_1d_vector(visible_nodes_extended_sub);
@@ -988,6 +996,9 @@ void tracker::tracking_step (MatrixXd X_orig,
         for (int i = dlo_idx*nodes_per_dlo_; i < (dlo_idx+1)*nodes_per_dlo_; i ++) {
             geodesic_coord_sub.push_back(geodesic_coord_[i]);
         }
+
+        MatrixXd offset(1, 4);
+        offset << dlo_idx*nodes_per_dlo_, 0, 0, 0;
 
         // get corr priors
         if (visible_nodes_extended_sub.size() == Y_sub.rows()) {
@@ -1006,9 +1017,6 @@ void tracker::tracking_step (MatrixXd X_orig,
             print_1d_vector(priors_vec_2);
 
             // take average
-            MatrixXd offset(1, 4);
-            offset << dlo_idx*nodes_per_dlo_, 0, 0, 0;
-
             for (int i = 0; i < Y_sub.rows(); i ++) {
                 if (i < priors_vec_2[0](0, 0) && i < priors_vec_1.size()) {
                     correspondence_priors_.push_back(priors_vec_1[i] + offset);
@@ -1021,47 +1029,71 @@ void tracker::tracking_step (MatrixXd X_orig,
                 }
             }
         }
-        else {
-            std::cout << "not supported yet" << std::endl;
+        else if (visible_nodes_extended_sub[0] == 0 && visible_nodes_extended_sub[visible_nodes_extended_sub.size()-1] == Y_sub.rows()-1) {
+            ROS_INFO("Mid-section occluded");
+
+            std::cout << "===== geodesic_coord_sub =====" << std::endl;
+            print_1d_vector(geodesic_coord_sub);
+
+            std::vector<MatrixXd> priors_vec_1 = traverse_euclidean(geodesic_coord_sub, guide_nodes_sub, visible_nodes_extended_sub, 0);
+            std::vector<MatrixXd> priors_vec_2 = traverse_euclidean(geodesic_coord_sub, guide_nodes_sub, visible_nodes_extended_sub, 1);
+
+            std::cout << "===== priors_vec_1 =====" << std::endl;
+            print_1d_vector(priors_vec_1);
+            std::cout << "===== priors_vec_2 =====" << std::endl;
+            print_1d_vector(priors_vec_2);
+
+            for (auto prior : priors_vec_1) {
+                correspondence_priors_.push_back(prior + offset);
+            }
+            for (auto prior : priors_vec_2) {
+                correspondence_priors_.push_back(prior + offset);
+            }
         }
-        // else if (visible_nodes_extended[0] == 0 && visible_nodes_extended[visible_nodes_extended.size()-1] == Y_.rows()-1) {
-        //     ROS_INFO("Mid-section occluded");
+        else if (visible_nodes_extended_sub[0] == 0) {
+            ROS_INFO("Tail occluded");
 
-        //     correspondence_priors_ = traverse_euclidean(geodesic_coord_, guide_nodes_, visible_nodes_extended, 0);
-        //     std::vector<MatrixXd> priors_vec_2 = traverse_euclidean(geodesic_coord_, guide_nodes_, visible_nodes_extended, 1);
-        //     // priors_vec = traverse_geodesic(geodesic_coord, guide_nodes, visible_nodes, 0);
-        //     // std::vector<MatrixXd> priors_vec_2 = traverse_geodesic(geodesic_coord, guide_nodes, visible_nodes, 1);
+            std::vector<MatrixXd> priors_vec = traverse_euclidean(geodesic_coord_sub, guide_nodes_sub, visible_nodes_extended_sub, 0);
+            
+            std::cout << "===== priors_vec =====" << std::endl;
+            print_1d_vector(priors_vec);
 
-        //     correspondence_priors_.insert(correspondence_priors_.end(), priors_vec_2.begin(), priors_vec_2.end());
-        // }
-        // else if (visible_nodes_extended[0] == 0) {
-        //     ROS_INFO("Tail occluded");
+            for (auto prior : priors_vec) {
+                correspondence_priors_.push_back(prior + offset);
+            }
+        }
+        else if (visible_nodes_extended_sub[visible_nodes_extended_sub.size()-1] == Y_sub.rows()-1) {
+            ROS_INFO("Head occluded");
 
-        //     correspondence_priors_ = traverse_euclidean(geodesic_coord_, guide_nodes_, visible_nodes_extended, 0);
-        //     // priors_vec = traverse_geodesic(geodesic_coord, guide_nodes, visible_nodes, 0);
-        // }
-        // else if (visible_nodes_extended[visible_nodes_extended.size()-1] == Y_.rows()-1) {
-        //     ROS_INFO("Head occluded");
+            std::vector<MatrixXd> priors_vec = traverse_euclidean(geodesic_coord_sub, guide_nodes_sub, visible_nodes_extended_sub, 1);
 
-        //     correspondence_priors_ = traverse_euclidean(geodesic_coord_, guide_nodes_, visible_nodes_extended, 1);
-        //     // priors_vec = traverse_geodesic(geodesic_coord, guide_nodes, visible_nodes, 1);
-        // }
-        // else {
-        //     ROS_INFO("Both ends occluded");
+            std::cout << "===== priors_vec =====" << std::endl;
+            print_1d_vector(priors_vec);
 
-        //     // determine which node moved the least
-        //     int alignment_node_idx = -1;
-        //     double moved_dist = 999999;
-        //     for (int i = 0; i < visible_nodes.size(); i ++) {
-        //         if (pt2pt_dis(Y_.row(visible_nodes[i]), guide_nodes_.row(i)) < moved_dist) {
-        //             moved_dist = pt2pt_dis(Y_.row(visible_nodes[i]), guide_nodes_.row(i));
-        //             alignment_node_idx = i;
-        //         }
-        //     }
+            for (auto prior : priors_vec) {
+                correspondence_priors_.push_back(prior + offset);
+            }
+        }
+        else {
+            ROS_INFO("Both ends occluded");
 
-        //     // std::cout << "alignment node index: " << alignment_node_idx << std::endl;
-        //     correspondence_priors_ = traverse_euclidean(geodesic_coord_, guide_nodes_, visible_nodes_extended, 2, alignment_node_idx);
-        // }
+            // determine which node moved the least
+            int alignment_node_idx = -1;
+            double moved_dist = 999999;
+            for (int i = 0; i < visible_nodes_extended_sub.size(); i ++) {
+                if (pt2pt_dis(Y_sub.row(visible_nodes_extended_sub[i]), guide_nodes_sub.row(i)) < moved_dist) {
+                    moved_dist = pt2pt_dis(Y_sub.row(visible_nodes_extended_sub[i]), guide_nodes_sub.row(i));
+                    alignment_node_idx = i;
+                }
+            }
+
+            // std::cout << "alignment node index: " << alignment_node_idx << std::endl;
+            std::vector<MatrixXd> priors_vec = traverse_euclidean(geodesic_coord_sub, guide_nodes_sub, visible_nodes_extended_sub, 2, alignment_node_idx);
+
+            for (auto prior : priors_vec) {
+                correspondence_priors_.push_back(prior + offset);
+            }
+        }
     }
     std::cout << "===== correspondence_priors_ =====" << std::endl;
     print_1d_vector(correspondence_priors_);

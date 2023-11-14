@@ -12,7 +12,7 @@
 
     <arg name="nodes_per_dlo" default="20" />
     <arg name="use_first_frame_masks" default="false" />
-    <arg name="folder_name" default=" " />
+    <arg name="folder_name" default="braid" />
 
     <!-- load parameters to corresponding nodes -->
     <node name="multidlo" pkg="multi-dlo" type="tracker" output="screen">
@@ -41,14 +41,14 @@
         <param name="multi_color_dlo" type="bool" value="$(arg multi_color_dlo)" />
 
         <param name="visibility_threshold" type="double" value="0.02" />
-        <param name="dlo_pixel_width" value="1" />
+        <param name="dlo_pixel_width" value="20" />
         <param name="d_vis" value="0.06" />
 
-        <param name="beta" value="0.35" />
+        <param name="beta" value="0.5" />
         <param name="lambda" value="50000" />
         <param name="alpha" value="3" />
 
-        <param name="beta_pre_proc" value="2"/>
+        <param name="beta_pre_proc" value="20"/>
         <param name="lambda_pre_proc" value="1"/>
         <param name="lle_weight" value="10.0" />
 
