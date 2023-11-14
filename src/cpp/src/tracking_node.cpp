@@ -159,6 +159,9 @@ sensor_msgs::ImagePtr Callback(const sensor_msgs::ImageConstPtr& image_msg, cons
             double cur_sum = 0;
             for (int i = 0; i < init_nodes.rows()-1; i ++) {
                 cur_sum += (init_nodes.row(i+1) - init_nodes.row(i)).norm();
+                if ((i+1) % nodes_per_dlo == 0 && i != 1) {
+                    cur_sum = 0;
+                }
                 converted_node_coord.push_back(cur_sum);
             }
 
