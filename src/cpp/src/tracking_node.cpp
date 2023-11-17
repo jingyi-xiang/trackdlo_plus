@@ -410,6 +410,69 @@ sensor_msgs::ImagePtr Callback(const sensor_msgs::ImageConstPtr& image_msg, cons
         guide_nodes = multi_dlo_tracker.get_guide_nodes();
         priors = multi_dlo_tracker.get_correspondence_pairs();
 
+        // post processing
+        MatrixXi edges(2, Y.rows());
+        edges(0, 0) = 0;
+        edges(1, edges.cols() - 1) = Y.rows() - 1;
+        for (int i = 1; i <= edges.cols() - 1; ++i) {
+            edges(0, i) = i;
+            edges(1, i - 1) = i;
+        }
+
+        MatrixXi new_edges(2, (nodes_per_dlo - 1) * num_of_dlos);
+        int count = 0;
+        for (int i = 0; i < num_of_dlos; i ++) {
+            for (int j = 0; j < nodes_per_dlo - 1; j ++) {
+                new_edges.col(count) = edges.col(i*nodes_per_dlo + j);
+                count ++;
+            }
+        }
+
+        // std::cout << new_edges << std::endl;
+
+        // MatrixXd Y_processed = cdcpd2_post_processing(Y_0.transpose(), Y.transpose(), new_edges, init_nodes.transpose());
+        // MatrixXd Y_processed = cdcpd2_post_processing(Y_0.transpose(), Y.transpose(), new_edges);
+
+        // ===== get G =====
+        // tracking multiple dlos
+        int M = Y_0.rows();
+        int kernel = 1;
+        double beta_post_proc = 0.1;
+
+        MatrixXd converted_node_dis = MatrixXd::Zero(M, M); // this is a M*M matrix in place of diff_sqrt
+        MatrixXd converted_node_dis_sq = MatrixXd::Zero(M, M);
+        std::vector<double> converted_node_coord = {0.0};   // this is not squared
+
+        MatrixXd G = MatrixXd::Zero(M, M);
+
+        double cur_sum = 0;
+        for (int i = 0; i < M-1; i ++) {
+            cur_sum += pt2pt_dis(Y_0.row(i+1), Y_0.row(i));
+            converted_node_coord.push_back(cur_sum);
+        }
+
+        for (int i = 0; i < converted_node_coord.size(); i ++) {
+            for (int j = 0; j < converted_node_coord.size(); j ++) {
+                converted_node_dis_sq(i, j) = pow(converted_node_coord[i] - converted_node_coord[j], 2);
+                converted_node_dis(i, j) = abs(converted_node_coord[i] - converted_node_coord[j]);
+            }
+        }
+
+        G = 1/(2*beta_post_proc * 2*beta_post_proc) * (-sqrt(2)*converted_node_dis/beta_post_proc).array().exp() * (sqrt(2)*converted_node_dis.array() + beta_post_proc);
+
+        if (use_geodesic && num_of_dlos > 1) {
+            MatrixXd G_new = MatrixXd::Zero(M, M);
+            for (int i = 0; i < num_of_dlos; i ++) {
+                int start = i * nodes_per_dlo;
+                G_new.block(start, start, nodes_per_dlo, nodes_per_dlo) = G.block(start, start, nodes_per_dlo, nodes_per_dlo);
+            }
+            G = G_new.replicate(1, 1);
+        }
+
+        MatrixXd Y_processed = post_processing_dev_2(Y_0.transpose(), Y.transpose(), new_edges, init_nodes.transpose(), G);
+
+        Y = Y_processed.replicate(1, 1);
+
         // log time
         time_diff = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - cur_time).count() / 1000.0;
         ROS_INFO_STREAM("Tracking step: " + std::to_string(time_diff) + " ms");

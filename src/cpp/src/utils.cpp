@@ -754,22 +754,22 @@ MatrixXd post_processing_dev_2 (MatrixXd Y_0, MatrixXd Y, Matrix2Xi E, MatrixXd 
 
         // std::cout << "built GW" << std::endl;
 
-        stamp = std::chrono::high_resolution_clock::now();
-        if (initial_template.rows() != 0) {
-            for (int i = 0; i < G.rows()-1; i ++) {
-                if ((i+1) % 20 == 0) {
-                    continue;
-                }
-                model.addQConstr((Y_0(0, i) + GW_vars[i*3 + 0] - Y_0(0, i+1) - GW_vars[(i+1)*3 + 0])*(Y_0(0, i) + GW_vars[i*3 + 0] - Y_0(0, i+1) - GW_vars[(i+1)*3 + 0]) + 
-                                 (Y_0(1, i) + GW_vars[i*3 + 1] - Y_0(1, i+1) - GW_vars[(i+1)*3 + 1])*(Y_0(1, i) + GW_vars[i*3 + 1] - Y_0(1, i+1) - GW_vars[(i+1)*3 + 1]) +
-                                 (Y_0(2, i) + GW_vars[i*3 + 2] - Y_0(2, i+1) - GW_vars[(i+1)*3 + 2])*(Y_0(2, i) + GW_vars[i*3 + 2] - Y_0(2, i+1) - GW_vars[(i+1)*3 + 2]), 
-                                 GRB_LESS_EQUAL,
-                                 1.05 * 1.05 * (initial_template.col(i) - initial_template.col(i+1)).squaredNorm());
-            }
-            model.update();
-        }
-        time_diff = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - stamp).count() / 1000.0;
-        ROS_INFO_STREAM("Add stretching constraint: " + std::to_string(time_diff) + " ms");
+        // stamp = std::chrono::high_resolution_clock::now();
+        // if (initial_template.rows() != 0) {
+        //     for (int i = 0; i < G.rows()-1; i ++) {
+        //         if ((i+1) % 20 == 0) {
+        //             continue;
+        //         }
+        //         model.addQConstr((Y_0(0, i) + GW_vars[i*3 + 0] - Y_0(0, i+1) - GW_vars[(i+1)*3 + 0])*(Y_0(0, i) + GW_vars[i*3 + 0] - Y_0(0, i+1) - GW_vars[(i+1)*3 + 0]) + 
+        //                          (Y_0(1, i) + GW_vars[i*3 + 1] - Y_0(1, i+1) - GW_vars[(i+1)*3 + 1])*(Y_0(1, i) + GW_vars[i*3 + 1] - Y_0(1, i+1) - GW_vars[(i+1)*3 + 1]) +
+        //                          (Y_0(2, i) + GW_vars[i*3 + 2] - Y_0(2, i+1) - GW_vars[(i+1)*3 + 2])*(Y_0(2, i) + GW_vars[i*3 + 2] - Y_0(2, i+1) - GW_vars[(i+1)*3 + 2]), 
+        //                          GRB_LESS_EQUAL,
+        //                          1.05 * 1.05 * (initial_template.col(i) - initial_template.col(i+1)).squaredNorm());
+        //     }
+        //     model.update();
+        // }
+        // time_diff = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - stamp).count() / 1000.0;
+        // ROS_INFO_STREAM("Add stretching constraint: " + std::to_string(time_diff) + " ms");
 
         // std::cout << "added stretching constraint" << std::endl;
 
