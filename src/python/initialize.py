@@ -106,7 +106,10 @@ def callback (rgb, depth):
     if use_first_frame_masks == False:
         # separate dlos (assume not entangled)
         gray = mask_binary.copy()
-        contours, _ = cv2.findContours(gray, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        # contours, _ = cv2.findContours(gray, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        _, contours, _ = cv2.findContours(gray, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        
         new_frame = np.zeros(gray.shape, np.uint8)
 
         for a, contour in enumerate(contours):

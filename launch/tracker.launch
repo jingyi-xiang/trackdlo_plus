@@ -15,7 +15,7 @@
     <arg name="folder_name" default="braid" />
 
     <!-- load parameters to corresponding nodes -->
-    <node name="multidlo" pkg="multi-dlo" type="tracker" output="screen">
+    <node name="multidlo" pkg="trackdlo_plus" type="tracker" output="screen">
         <param name="camera_info_topic" type="string" value="$(arg camera_info_topic)" />
         <param name="rgb_topic" type="string" value="$(arg rgb_topic)" />
         <param name="depth_topic" type="string" value="$(arg depth_topic)" />
@@ -55,7 +55,7 @@
     </node>
 
     <!-- launch python node for initialization -->
-    <node name="init_tracker" pkg="multi-dlo" type="initialize.py" output="screen">
+    <node name="init_tracker" pkg="trackdlo_plus" type="initialize.py" output="screen">
         <param name="camera_info_topic" type="string" value="$(arg camera_info_topic)" />
         <param name="rgb_topic" type="string" value="$(arg rgb_topic)" />
         <param name="depth_topic" type="string" value="$(arg depth_topic)" />
