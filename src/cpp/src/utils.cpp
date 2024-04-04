@@ -563,101 +563,6 @@ MatrixXd cdcpd2_post_processing (MatrixXd Y_0, MatrixXd Y, Matrix2Xi E, MatrixXd
 	return ret;
 }
 
-MatrixXd post_processing (MatrixXd Y_0, MatrixXd Y, double check_distance, double dlo_diameter, int nodes_per_dlo, bool clamp) {
-    MatrixXd Y_processed = MatrixXd::Zero(Y.rows(), Y.cols());
-    int num_of_dlos = Y.rows() / nodes_per_dlo;
-
-    GRBVar* vars = nullptr;
-    GRBEnv& env = getGRBEnv();
-    env.set(GRB_IntParam_OutputFlag, 0);
-    GRBModel model(env);
-    // model.set("ScaleFlag", "0");
-    // model.set("FeasibilityTol", "0.01");
-
-    // add vars to the model
-    const ssize_t num_of_vars = 3 * Y.rows();
-    const std::vector<double> lower_bound(num_of_vars, -GRB_INFINITY);
-    const std::vector<double> upper_bound(num_of_vars, GRB_INFINITY);
-    vars = model.addVars(lower_bound.data(), upper_bound.data(), nullptr, nullptr, nullptr, (int) num_of_vars);
-
-    // add constraints to the model
-    for (int i = 0; i < Y.rows()-1; i ++) {
-        for (int j = i; j < Y.rows()-1; j ++) {
-            // edge 1: y_i, y_{i+1}
-            // edge 2: y_j, y_{j+1}
-            if (abs(i - j) <= 1) {
-                continue;
-            }
-
-            // for multiple dlos
-            if (num_of_dlos > 1) {
-                if ((i+1) % nodes_per_dlo == 0 || (j+1) % nodes_per_dlo == 0) {
-                    continue;
-                }
-            }
-
-            auto[temp1, temp2, cur_shortest_dist] = shortest_dist_between_lines(Y.row(i), Y.row(i+1), Y.row(j), Y.row(j+1), true);
-            if (cur_shortest_dist >= check_distance) {
-                continue;
-            }
-
-            auto[pA, pB, dist] = shortest_dist_between_lines(Y_0.row(i), Y_0.row(i+1), Y_0.row(j), Y_0.row(j+1), clamp);
-
-            std::cout << "Adding self-intersection constraint between E(" << i << ", " << i+1 << ") and E(" << j << ", " << j+1 << ")" << std::endl;
-
-            // pA is the point on edge y_i, y_{i+1}
-            // pB is the point on edge y_j, y_{j+1}
-            // the below definition should be consistent with CDCPD2's Eq 18-21
-            double r_i = ((pA - Y.row(i+1)).array() / (Y.row(i) - Y.row(i+1)).array())(0, 0);
-            double r_j = ((pB - Y.row(j+1)).array() / (Y.row(j) - Y.row(j+1)).array())(0, 0);
-
-            std::cout << "r_i, r_j = " << r_i << ", " << r_j << std::endl;
-
-            // === Python ===
-            // pA_var = r_i*vars[i] + (1 - r_i)*vars[i+1]
-            // pB_var = r_j*vars[j] + (1 - r_j)*vars[j+1]
-            // // model.addConstr(operator.ge(np.sum(np.square(pA_var - pB_var)), dlo_diameter**2))
-            // model.addConstr(operator.ge(((pA_var[0] - pB_var[0])*(pA[0] - pB[0]) +
-            //                              (pA_var[1] - pB_var[1])*(pA[1] - pB[1]) +
-            //                              (pA_var[2] - pB_var[2])*(pA[2] - pB[2])) / np.linalg.norm(pA - pB), dlo_diameter))
-
-            // vars can be seen as a flattened array of size len(Y)*3
-            model.addConstr((((r_i*vars[3*i] + (1 - r_i)*vars[3*(i+1)]) - (r_j*vars[3*j] + (1 - r_j)*vars[3*(j+1)])) * (pA(0, 0) - pB(0, 0)) +
-                             ((r_i*vars[3*i+1] + (1 - r_i)*vars[3*(i+1)+1]) - (r_j*vars[3*j+1] + (1 - r_j)*vars[3*(j+1)+1])) * (pA(0, 1) - pB(0, 1)) +
-                             ((r_i*vars[3*i+2] + (1 - r_i)*vars[3*(i+1)+2]) - (r_j*vars[3*j+2] + (1 - r_j)*vars[3*(j+1)+2])) * (pA(0, 2) - pB(0, 2))) / (pA - pB).norm()
-                            >= dlo_diameter);
-        }
-    }
-
-    // objective function (as close to Y as possible)
-    GRBQuadExpr objective_fn(0);
-    for (ssize_t i = 0; i < Y.rows(); i ++) {
-        const auto expr0 = vars[3*i] - Y(i, 0);
-        const auto expr1 = vars[3*i+1] - Y(i, 1);
-        const auto expr2 = vars[3*i+2] - Y(i, 2);
-        objective_fn += expr0 * expr0;
-        objective_fn += expr1 * expr1;
-        objective_fn += expr2 * expr2;
-    }
-    model.setObjective(objective_fn, GRB_MINIMIZE);
-
-    model.update();
-    model.optimize();
-    if (model.get(GRB_IntAttr_Status) == GRB_OPTIMAL || model.get(GRB_IntAttr_Status) == GRB_SUBOPTIMAL) {
-        for (ssize_t i = 0; i < Y.rows(); i ++) {
-            Y_processed(i, 0) = vars[3*i].get(GRB_DoubleAttr_X);
-            Y_processed(i, 1) = vars[3*i+1].get(GRB_DoubleAttr_X);
-            Y_processed(i, 2) = vars[3*i+2].get(GRB_DoubleAttr_X);
-        }
-    }
-    else {
-        std::cout << "Status: " << model.get(GRB_IntAttr_Status) << std::endl;
-        exit(-1);
-    }
-
-    return Y_processed;
-}
-
 std::vector<GRBLinExpr> build_GW (MatrixXd G, GRBVar* w_vars) {
     std::vector<GRBLinExpr> result = {};
 
@@ -716,7 +621,7 @@ GRBQuadExpr build_tr_WTGW (MatrixXd G, GRBVar* w_vars) {
     return tr_WTGW;
 } 
 
-MatrixXd post_processing_dev_2 (MatrixXd Y_0, MatrixXd Y, Matrix2Xi E, MatrixXd initial_template, MatrixXd G) {
+MatrixXd post_processing (MatrixXd Y_0, MatrixXd Y, Matrix2Xi E, MatrixXd initial_template, MatrixXd G) {
     // Y: Y^t in Eq. (21)
     // E: E in Eq. (21)
     // auto [nearestPts, normalVecs] = nearest_points_and_normal(last_template);

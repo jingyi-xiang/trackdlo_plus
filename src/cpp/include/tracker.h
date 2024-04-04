@@ -43,8 +43,8 @@
 #include <cstdlib>
 #include <signal.h>
 
-// #include "/home/jingyixiang/gurobi912/linux64/include/gurobi_c++.h"
-#include <gurobi_c++.h>
+#include "/home/jingyixiang/gurobi912/linux64/include/gurobi_c++.h"  // personal computer
+// #include <gurobi_c++.h>  // lab computer
 
 #ifndef tracker_H
 #define tracker_H

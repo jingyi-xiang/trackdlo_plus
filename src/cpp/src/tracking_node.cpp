@@ -469,8 +469,8 @@ sensor_msgs::ImagePtr Callback(const sensor_msgs::ImageConstPtr& image_msg, cons
             G = G_new.replicate(1, 1);
         }
 
-        MatrixXd Y_processed = post_processing_dev_2(Y_0.transpose(), Y.transpose(), new_edges, init_nodes.transpose(), G);
-
+        //post_processing
+        MatrixXd Y_processed = post_processing(Y_0.transpose(), Y.transpose(), new_edges, init_nodes.transpose(), G);
         Y = Y_processed.replicate(1, 1);
 
         // log time

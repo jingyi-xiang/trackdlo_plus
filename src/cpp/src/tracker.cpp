@@ -957,11 +957,11 @@ void tracker::tracking_step (MatrixXd X_orig,
 
     int num_of_dlos = Y_.rows() / nodes_per_dlo_;
 
-    std::cout << "== visible_nodes_extended ==" << std::endl;
-    print_1d_vector(visible_nodes_extended);
+    // std::cout << "== visible_nodes_extended ==" << std::endl;
+    // print_1d_vector(visible_nodes_extended);
 
     for (int dlo_idx = 0; dlo_idx < num_of_dlos; dlo_idx ++) {
-        std::cout << "===== dlo #" + std::to_string(dlo_idx+1) + " =====" << std::endl;
+        // std::cout << "===== dlo #" + std::to_string(dlo_idx+1) + " =====" << std::endl;
 
         // get y sub
         MatrixXd Y_sub = Y_.block(dlo_idx*nodes_per_dlo_, 0, nodes_per_dlo_, 3);
@@ -978,8 +978,8 @@ void tracker::tracking_step (MatrixXd X_orig,
             guide_nodes_sub.row(i) = guide_nodes_sub_vec[i];
         }
 
-        std::cout << "===== guide_nodes_sub =====" << std::endl;
-        std::cout << guide_nodes_sub << std::endl;
+        // std::cout << "===== guide_nodes_sub =====" << std::endl;
+        // std::cout << guide_nodes_sub << std::endl;
 
         // get visible nodes sub
         std::vector<int> visible_nodes_extended_sub = {};
@@ -988,8 +988,8 @@ void tracker::tracking_step (MatrixXd X_orig,
                 visible_nodes_extended_sub.push_back(id - dlo_idx*nodes_per_dlo_);
             }
         }
-        std::cout << "===== visible_nodes_extended_sub =====" << std::endl;
-        print_1d_vector(visible_nodes_extended_sub);
+        // std::cout << "===== visible_nodes_extended_sub =====" << std::endl;
+        // print_1d_vector(visible_nodes_extended_sub);
 
         // get geodesic coord sub
         std::vector<double> geodesic_coord_sub = {};
@@ -1011,10 +1011,10 @@ void tracker::tracking_step (MatrixXd X_orig,
             // priors vec 2 goes from last index -> first index
             std::reverse(priors_vec_2.begin(), priors_vec_2.end());
 
-            std::cout << "===== priors_vec_1 =====" << std::endl;
-            print_1d_vector(priors_vec_1);
-            std::cout << "===== priors_vec_2 =====" << std::endl;
-            print_1d_vector(priors_vec_2);
+            // std::cout << "===== priors_vec_1 =====" << std::endl;
+            // print_1d_vector(priors_vec_1);
+            // std::cout << "===== priors_vec_2 =====" << std::endl;
+            // print_1d_vector(priors_vec_2);
 
             // take average
             for (int i = 0; i < Y_sub.rows(); i ++) {
@@ -1032,16 +1032,16 @@ void tracker::tracking_step (MatrixXd X_orig,
         else if (visible_nodes_extended_sub[0] == 0 && visible_nodes_extended_sub[visible_nodes_extended_sub.size()-1] == Y_sub.rows()-1) {
             ROS_INFO("Mid-section occluded");
 
-            std::cout << "===== geodesic_coord_sub =====" << std::endl;
-            print_1d_vector(geodesic_coord_sub);
+            // std::cout << "===== geodesic_coord_sub =====" << std::endl;
+            // print_1d_vector(geodesic_coord_sub);
 
             std::vector<MatrixXd> priors_vec_1 = traverse_euclidean(geodesic_coord_sub, guide_nodes_sub, visible_nodes_extended_sub, 0);
             std::vector<MatrixXd> priors_vec_2 = traverse_euclidean(geodesic_coord_sub, guide_nodes_sub, visible_nodes_extended_sub, 1);
 
-            std::cout << "===== priors_vec_1 =====" << std::endl;
-            print_1d_vector(priors_vec_1);
-            std::cout << "===== priors_vec_2 =====" << std::endl;
-            print_1d_vector(priors_vec_2);
+            // std::cout << "===== priors_vec_1 =====" << std::endl;
+            // print_1d_vector(priors_vec_1);
+            // std::cout << "===== priors_vec_2 =====" << std::endl;
+            // print_1d_vector(priors_vec_2);
 
             for (auto prior : priors_vec_1) {
                 correspondence_priors_.push_back(prior + offset);
@@ -1055,8 +1055,8 @@ void tracker::tracking_step (MatrixXd X_orig,
 
             std::vector<MatrixXd> priors_vec = traverse_euclidean(geodesic_coord_sub, guide_nodes_sub, visible_nodes_extended_sub, 0);
             
-            std::cout << "===== priors_vec =====" << std::endl;
-            print_1d_vector(priors_vec);
+            // std::cout << "===== priors_vec =====" << std::endl;
+            // print_1d_vector(priors_vec);
 
             for (auto prior : priors_vec) {
                 correspondence_priors_.push_back(prior + offset);
@@ -1067,8 +1067,8 @@ void tracker::tracking_step (MatrixXd X_orig,
 
             std::vector<MatrixXd> priors_vec = traverse_euclidean(geodesic_coord_sub, guide_nodes_sub, visible_nodes_extended_sub, 1);
 
-            std::cout << "===== priors_vec =====" << std::endl;
-            print_1d_vector(priors_vec);
+            // std::cout << "===== priors_vec =====" << std::endl;
+            // print_1d_vector(priors_vec);
 
             for (auto prior : priors_vec) {
                 correspondence_priors_.push_back(prior + offset);
@@ -1095,8 +1095,8 @@ void tracker::tracking_step (MatrixXd X_orig,
             }
         }
     }
-    std::cout << "===== correspondence_priors_ =====" << std::endl;
-    print_1d_vector(correspondence_priors_);
+    // std::cout << "===== correspondence_priors_ =====" << std::endl;
+    // print_1d_vector(correspondence_priors_);
 
     // include_lle == false because we have no space to discuss it in the paper
     cpd_lle (X_orig, Y_, sigma2_, beta_, lambda_, lle_weight_, mu_, max_iter_, tol_, false, correspondence_priors_, alpha_, visible_nodes_extended, k_vis_, visibility_threshold_);

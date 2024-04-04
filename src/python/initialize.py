@@ -107,8 +107,8 @@ def callback (rgb, depth):
         # separate dlos (assume not entangled)
         gray = mask_binary.copy()
 
-        # contours, _ = cv2.findContours(gray, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        _, contours, _ = cv2.findContours(gray, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(gray, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)  # personal computer
+        # _, contours, _ = cv2.findContours(gray, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)  # lab computer
         
         new_frame = np.zeros(gray.shape, np.uint8)
 
