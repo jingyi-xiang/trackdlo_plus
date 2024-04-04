@@ -16,6 +16,7 @@ class OcclusionSimulation:
         self.rect_center = None
         self.offsets = None
         self.resting = False
+        self.scale = 2.4
 
         # update the mask each iteration
         self.mouse_mask = None
@@ -31,8 +32,8 @@ class OcclusionSimulation:
 
         # resize for smaller window
         height, width, layers = cur_image.shape
-        new_h = int(height / 1.5)
-        new_w = int(width / 1.5)
+        new_h = int(height / self.scale)
+        new_w = int(width / self.scale)
         frame = cv2.resize(cur_image, (new_w, new_h))
 
         # initialize mask if none
@@ -47,8 +48,6 @@ class OcclusionSimulation:
 
         key = cv2.waitKey(10)
 
-        # print(np.array(self.rect)*1.5)
-
         if key == 114: # r
             # reset everyhting
             frame = cv2.resize(cur_image, (new_w, new_h))
@@ -61,19 +60,27 @@ class OcclusionSimulation:
             # first reset
             self.mouse_mask = np.ones(frame.shape)
             self.mouse_mask[self.rect[1]:self.rect[3], self.rect[0]:self.rect[2], :] = 0
+            if self.rect[0] < self.rect[2] and self.rect[1] < self.rect[3]:
+                frame = cv2.putText(frame, 'occlusion', (self.rect[0], self.rect[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 1.2/self.scale, (0, 0, 240), 2)
+            elif self.rect[0] < self.rect[2] and self.rect[1] > self.rect[3]:
+                frame = cv2.putText(frame, 'occlusion', (self.rect[0], self.rect[3]-10), cv2.FONT_HERSHEY_SIMPLEX, 1.2/self.scale, (0, 0, 240), 2)
+            elif self.rect[0] > self.rect[2] and self.rect[1] < self.rect[3]:
+                frame = cv2.putText(frame, 'occlusion', (self.rect[2], self.rect[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 1.2/self.scale, (0, 0, 240), 2)
+            else:
+                frame = cv2.putText(frame, 'occlusion', (self.rect[2], self.rect[3]-10), cv2.FONT_HERSHEY_SIMPLEX, 1.2/self.scale, (0, 0, 240), 2)
             cv2.imshow('frame', frame)
         else:
             # drawing rectangle
             if self.startPoint == True and self.endPoint != True:
                 cv2.rectangle(frame, (self.rect[0], self.rect[1]), (self.rect[2], self.rect[3]), (0, 0, 255), 2)
                 if self.rect[0] < self.rect[2] and self.rect[1] < self.rect[3]:
-                    frame = cv2.putText(frame, 'occlusion', (self.rect[0], self.rect[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 240), 2)
+                    frame = cv2.putText(frame, 'occlusion', (self.rect[0], self.rect[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 1.2/self.scale, (0, 0, 240), 2)
                 elif self.rect[0] < self.rect[2] and self.rect[1] > self.rect[3]:
-                    frame = cv2.putText(frame, 'occlusion', (self.rect[0], self.rect[3]-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 240), 2)
+                    frame = cv2.putText(frame, 'occlusion', (self.rect[0], self.rect[3]-10), cv2.FONT_HERSHEY_SIMPLEX, 1.2/self.scale, (0, 0, 240), 2)
                 elif self.rect[0] > self.rect[2] and self.rect[1] < self.rect[3]:
-                    frame = cv2.putText(frame, 'occlusion', (self.rect[2], self.rect[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 240), 2)
+                    frame = cv2.putText(frame, 'occlusion', (self.rect[2], self.rect[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 1.2/self.scale, (0, 0, 240), 2)
                 else:
-                    frame = cv2.putText(frame, 'occlusion', (self.rect[2], self.rect[3]-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 240), 2)
+                    frame = cv2.putText(frame, 'occlusion', (self.rect[2], self.rect[3]-10), cv2.FONT_HERSHEY_SIMPLEX, 1.2/self.scale, (0, 0, 240), 2)
             
             # if another rectangle is drawn, update mask
             if self.startPoint == True and self.endPoint == True:
@@ -86,7 +93,7 @@ class OcclusionSimulation:
                 self.mouse_mask[self.rect[1]:self.rect[3], self.rect[0]:self.rect[2], :] = 0
 
                 if not self.mouse_mask.all() == 1:
-                    frame = cv2.putText(frame, 'occlusion', (self.rect[0], self.rect[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 240), 2)
+                    frame = cv2.putText(frame, 'occlusion', (self.rect[0], self.rect[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 1.2/self.scale, (0, 0, 240), 2)
 
             cv2.imshow('frame', frame)
 
